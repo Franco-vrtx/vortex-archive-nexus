@@ -1,132 +1,246 @@
 
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useCallback } from 'react';
+import { createNoise3D } from 'simplex-noise';
 
 export function VortexAnimation() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const resizeCanvas = () => {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
-    };
-
-    resizeCanvas();
-    window.addEventListener('resize', resizeCanvas);
-
-    // Node setup
-    let points: Point[] = [];
-    const numPoints = 100;
-    const maxDistance = 150;
-
-    class Point {
-      x: number;
-      y: number;
-      vx: number;
-      vy: number;
-      radius: number;
-      color: string;
-
-      constructor() {
-        this.x = Math.random() * canvas.width;
-        this.y = Math.random() * canvas.height;
-        this.vx = (Math.random() - 0.5) * 0.8;
-        this.vy = (Math.random() - 0.5) * 0.8;
-        this.radius = Math.random() * 2 + 1;
-        
-        // Generate colors in the blue-purple range
-        const hue = Math.random() * 60 + 220; // 220 to 280 range (blue to purple)
-        const saturation = Math.random() * 30 + 50; // 50% to 80%
-        const lightness = Math.random() * 30 + 50; // 50% to 80%
-        this.color = `hsla(${hue}, ${saturation}%, ${lightness}%, 0.6)`;
-      }
-
-      update() {
-        if (this.x < 0 || this.x > canvas.width) this.vx = -this.vx;
-        if (this.y < 0 || this.y > canvas.height) this.vy = -this.vy;
-        
-        this.x += this.vx;
-        this.y += this.vy;
-      }
-
-      draw() {
-        if (!ctx) return;
-        ctx.beginPath();
-        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-        ctx.fillStyle = this.color;
-        ctx.fill();
-      }
-    }
-
-    // Initialize points
-    for (let i = 0; i < numPoints; i++) {
-      points.push(new Point());
-    }
-
-    // Mouse interaction
-    let mouseX = 0;
-    let mouseY = 0;
-    let mouseRadius = 150;
-
-    canvas.addEventListener('mousemove', (e) => {
-      mouseX = e.clientX;
-      mouseY = e.clientY;
-    });
-
-    // Animation loop
-    const animate = () => {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      
-      // Update and draw points
-      points.forEach(point => {
-        point.update();
-        point.draw();
-        
-        // Mouse repulsion
-        const dx = mouseX - point.x;
-        const dy = mouseY - point.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        
-        if (distance < mouseRadius) {
-          const force = (mouseRadius - distance) / mouseRadius;
-          point.vx -= force * dx / distance * 0.02;
-          point.vy -= force * dy / distance * 0.02;
-        }
-        
-        // Connect nearby points with lines
-        points.forEach(otherPoint => {
-          if (point === otherPoint) return;
-          
-          const dx = point.x - otherPoint.x;
-          const dy = point.y - otherPoint.y;
-          const distance = Math.sqrt(dx * dx + dy * dy);
-          
-          if (distance < maxDistance) {
-            ctx.beginPath();
-            ctx.moveTo(point.x, point.y);
-            ctx.lineTo(otherPoint.x, otherPoint.y);
-            ctx.strokeStyle = `rgba(99, 102, 241, ${0.1 * (1 - distance / maxDistance)})`;
-            ctx.lineWidth = 0.5;
-            ctx.stroke();
-          }
-        });
-      });
-      
-      requestAnimationFrame(animate);
-    };
-
-    animate();
-
-    return () => {
-      window.removeEventListener('resize', resizeCanvas);
-    };
+  const animationFrameIdRef = useRef<number>(0);
+  const particlePropsRef = useRef<Float32Array | null>(null);
+  const centerRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const tickRef = useRef<number>(0);
+  const noise3DRef = useRef<ReturnType<typeof createNoise3D> | null>(null);
+  
+  // Constants
+  const PARTICLE_COUNT = 700;
+  const PARTICLE_PROPS_COUNT = 7; // x, y, vx, vy, life, ttl, hue
+  const TAU = Math.PI * 2;
+  const noiseSteps = 0.0005;
+  
+  const initParticle = useCallback((i: number) => {
+    if (!particlePropsRef.current || !canvasRef.current) return;
+    
+    const width = canvasRef.current.width;
+    const height = canvasRef.current.height;
+    const i3 = i * PARTICLE_PROPS_COUNT;
+    
+    // Position
+    particlePropsRef.current[i3 + 0] = Math.random() * width; // x
+    particlePropsRef.current[i3 + 1] = Math.random() * height; // y
+    
+    // Velocity
+    particlePropsRef.current[i3 + 2] = 0; // vx
+    particlePropsRef.current[i3 + 3] = 0; // vy
+    
+    // Life
+    particlePropsRef.current[i3 + 4] = 0; // life
+    particlePropsRef.current[i3 + 5] = Math.random() * 200 + 100; // ttl
+    
+    // Color (hue)
+    particlePropsRef.current[i3 + 6] = Math.random() * 60 + 220; // 220-280 (blue to purple)
   }, []);
-
+  
+  const initParticles = useCallback(() => {
+    if (!canvasRef.current) return;
+    
+    particlePropsRef.current = new Float32Array(PARTICLE_COUNT * PARTICLE_PROPS_COUNT);
+    
+    for (let i = 0; i < PARTICLE_COUNT; i++) {
+      initParticle(i);
+    }
+  }, [initParticle]);
+  
+  const fadeInOut = (t: number, m: number) => {
+    const hm = 0.5 * m;
+    return Math.abs((t + hm) % m - hm) / hm;
+  };
+  
+  const lerp = (start: number, end: number, amt: number) => {
+    return (1 - amt) * start + amt * end;
+  };
+  
+  const updateParticle = useCallback((i: number) => {
+    if (!particlePropsRef.current || !canvasRef.current || !noise3DRef.current) return;
+    
+    const width = canvasRef.current.width;
+    const height = canvasRef.current.height;
+    const noise3D = noise3DRef.current;
+    const i3 = i * PARTICLE_PROPS_COUNT;
+    
+    // Extract properties
+    let x = particlePropsRef.current[i3 + 0];
+    let y = particlePropsRef.current[i3 + 1];
+    let vx = particlePropsRef.current[i3 + 2];
+    let vy = particlePropsRef.current[i3 + 3];
+    let life = particlePropsRef.current[i3 + 4];
+    const ttl = particlePropsRef.current[i3 + 5];
+    
+    // Update life
+    particlePropsRef.current[i3 + 4] = life = Math.min(ttl, life + 1);
+    
+    // Reset particle if it's complete its life cycle
+    if (life >= ttl) {
+      initParticle(i);
+      return;
+    }
+    
+    // Noise coefficients
+    const xOff = 0.00025;
+    const yOff = 0.00025;
+    const zOff = 0.0005;
+    const speed = 0.7;
+    
+    // Get noise value at current position and time
+    let noise = noise3D(x * xOff, y * yOff, tickRef.current * zOff) * noiseSteps * TAU;
+    
+    // Update velocity based on noise (creates flow field effect)
+    vx = lerp(vx, Math.cos(noise) * speed, 0.05);
+    vy = lerp(vy, Math.sin(noise) * speed, 0.05);
+    
+    // Update position
+    x += vx;
+    y += vy;
+    
+    // Wrap around canvas boundaries
+    if (x < 0) x = width;
+    if (x > width) x = 0;
+    if (y < 0) y = height;
+    if (y > height) y = 0;
+    
+    // Store updated values
+    particlePropsRef.current[i3 + 0] = x;
+    particlePropsRef.current[i3 + 1] = y;
+    particlePropsRef.current[i3 + 2] = vx;
+    particlePropsRef.current[i3 + 3] = vy;
+  }, [initParticle]);
+  
+  const drawParticles = useCallback(() => {
+    if (!particlePropsRef.current || !canvasRef.current) return;
+    
+    const ctx = canvasRef.current.getContext('2d');
+    if (!ctx) return;
+    
+    for (let i = 0; i < PARTICLE_COUNT; i++) {
+      const i3 = i * PARTICLE_PROPS_COUNT;
+      const x = particlePropsRef.current[i3 + 0];
+      const y = particlePropsRef.current[i3 + 1];
+      const life = particlePropsRef.current[i3 + 4];
+      const ttl = particlePropsRef.current[i3 + 5];
+      const hue = particlePropsRef.current[i3 + 6];
+      
+      // Calculate radius and opacity based on life
+      const radius = 1 + Math.sin(life / ttl * Math.PI) * 1.5;
+      const opacity = fadeInOut(life, ttl);
+      
+      // Set color based on hue
+      const isDarkMode = document.documentElement.classList.contains('dark');
+      const particleColor = isDarkMode 
+        ? `hsla(${hue}, 100%, 70%, ${opacity * 0.8})`
+        : `hsla(${hue}, 80%, 50%, ${opacity * 0.7})`;
+      
+      // Draw particle
+      ctx.beginPath();
+      ctx.arc(x, y, radius, 0, TAU);
+      ctx.fillStyle = particleColor;
+      ctx.fill();
+      
+      // Update particle for next frame
+      updateParticle(i);
+    }
+  }, [updateParticle]);
+  
+  const draw = useCallback(() => {
+    if (!canvasRef.current) return;
+    
+    const ctx = canvasRef.current.getContext('2d');
+    if (!ctx) return;
+    
+    // Increment time ticker for noise
+    tickRef.current += 1;
+    
+    // Clear canvas with slight opacity to create trails
+    ctx.fillStyle = document.documentElement.classList.contains('dark')
+      ? 'rgba(0, 0, 0, 0.2)'
+      : 'rgba(255, 255, 255, 0.2)';
+    ctx.fillRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+    
+    // Draw all particles
+    drawParticles();
+    
+    // Request next frame
+    animationFrameIdRef.current = requestAnimationFrame(draw);
+  }, [drawParticles]);
+  
+  const resize = useCallback(() => {
+    if (!canvasRef.current) return;
+    
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    
+    // Set canvas size to match its display size
+    canvas.width = rect.width;
+    canvas.height = rect.height;
+    
+    // Update center reference
+    centerRef.current = {
+      x: canvas.width / 2,
+      y: canvas.height / 2
+    };
+    
+    // Reinitialize particles for new dimensions
+    initParticles();
+  }, [initParticles]);
+  
+  const setup = useCallback(() => {
+    // Create noise generator (client-side only)
+    noise3DRef.current = createNoise3D();
+    
+    // Initialize the system
+    resize();
+    
+    // Start animation
+    animationFrameIdRef.current = requestAnimationFrame(draw);
+    
+    // Add resize listener
+    window.addEventListener('resize', resize);
+    
+    // Cleanup function
+    return () => {
+      window.removeEventListener('resize', resize);
+      if (animationFrameIdRef.current) {
+        cancelAnimationFrame(animationFrameIdRef.current);
+      }
+    };
+  }, [draw, resize]);
+  
+  // Initialize on mount
+  useEffect(() => {
+    // Only run setup in browser environment
+    if (typeof window !== 'undefined') {
+      const cleanup = setup();
+      return cleanup;
+    }
+  }, [setup]);
+  
+  // Re-initialize when theme changes
+  useEffect(() => {
+    const themeObserver = new MutationObserver(() => {
+      if (canvasRef.current) {
+        const ctx = canvasRef.current.getContext('2d');
+        if (ctx) {
+          // Clear canvas on theme change
+          ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+        }
+      }
+    });
+    
+    themeObserver.observe(document.documentElement, { 
+      attributes: true, 
+      attributeFilter: ['class'] 
+    });
+    
+    return () => themeObserver.disconnect();
+  }, []);
+  
   return (
     <canvas 
       ref={canvasRef}
