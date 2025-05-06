@@ -1,4 +1,3 @@
-
 import { NavBar } from "@/components/NavBar";
 import { Footer } from "@/components/Footer";
 import { VortexAnimation } from "@/components/VortexAnimation";
@@ -18,7 +17,7 @@ const Index = () => {
       
       <main className="flex-1">
         {/* Hero Section */}
-        <section className="relative min-h-[70vh] flex flex-col items-center justify-center overflow-hidden vortex-pattern">
+        <section className="relative min-h-[70vh] flex flex-col items-center justify-center overflow-hidden">
           <VortexAnimation />
           <div className="container max-w-4xl text-center z-10 px-4">
             <div className="flex justify-center mb-4 animate-pulse-slow">

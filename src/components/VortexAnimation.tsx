@@ -24,11 +24,11 @@ export function VortexAnimation() {
     // Determine colors based on the current theme (check if dark class is present)
     const isDarkMode = document.documentElement.classList.contains('dark');
     
-    const particleColor = isDarkMode ? "#a0a0a0" : "#505050"; // Lighter gray for dark, darker gray for light
-    const linkColor = isDarkMode ? "#404040" : "#c0c0c0"; // Darker gray for dark, lighter gray for light
+    const particleColor = isDarkMode ? "#a5b4fc" : "#505050"; // Light purple for dark, darker gray for light
+    const linkColor = isDarkMode ? "#6366f1" : "#c0c0c0"; // Primary purple for dark, lighter gray for light
     const backgroundColor = isDarkMode 
-      ? "hsla(225, 30%, 8%, 0)" // Transparent dark background
-      : "hsla(240, 25%, 98%, 0)"; // Transparent light background
+      ? "transparent" // Transparent dark background
+      : "transparent"; // Transparent light background
 
     return {
       background: {
@@ -61,7 +61,7 @@ export function VortexAnimation() {
           color: linkColor,
           distance: 150,
           enable: true,
-          opacity: 0.2, // Subtle links
+          opacity: 0.3, // Slightly more visible links
           width: 1,
         },
         move: {
@@ -77,12 +77,12 @@ export function VortexAnimation() {
         number: {
           density: {
             enable: true,
-            area: 800, // Adjust density
+            area: 400, // Increased density (smaller area = more particles)
           },
-          value: 70, // Slightly higher number of particles as requested
+          value: 150, // Significantly more particles
         },
         opacity: {
-          value: 0.4, // Subtle particles
+          value: 0.6, // More visible particles
         },
         shape: {
           type: "circle",
